@@ -1,5 +1,5 @@
 
-name: C Network Chat Build
+name: C Network Chat Build and Test
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,6 +24,9 @@ jobs:
         run: |
           test -x sender
           test -x receiver
+
+      - name: Run UDP communication test
+        run: python3 tests/test_udp.py
 
       - name: Clean build files
         run: make clean
