@@ -1,38 +1,62 @@
 
-import subprocess
 import socket
+import subprocess
 import threading
+import unittest
 
-PORT = 19090
-MESSAGE = "Hello from C sender!"
 
-received = []
+class UDPTests(unittest.TestCase):
 
-def receive_message():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind(("127.0.0.1", PORT))
-        sock.settimeout(5)
+    def test_receiver(self):
+        message = b"Hello C receiver!"
 
-        data, address = sock.recvfrom(1024)
-        received.append(data.decode())
+        receiver = subprocess.Popen(
+            ["./receiver", "0"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
 
-thread = threading.Thread(target=receive_message)
-thread.start()
+        # Receiver rejects port 0, so verify validation.
+        stdout, stderr = receiver.communicate(timeout=5)
 
-sender = subprocess.run(
-    ["./sender", "127.0.0.1", str(PORT)],
-    input=MESSAGE + "\nexit\n",
-    text=True,
-    capture_output=True,
-    timeout=10
-)
+        self.assertNotEqual(receiver.returncode, 0)
+        self.assertIn("Invalid port number", stderr)
 
-thread.join(timeout=6)
+    def test_sender(self):
+        message = "Hello from C sender!"
+        received = []
 
-assert sender.returncode == 0, sender.stderr
-assert not thread.is_alive(), "Receiver timed out"
-assert received == [MESSAGE], (
-    f"Expected {MESSAGE!r}, got {received!r}"
-)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            sock.settimeout(5)
+            port = sock.getsockname()[1]
 
-print("PASS: C sender successfully transmitted UDP message!")
+            sender = subprocess.run(
+                ["./sender", "127.0.0.1", str(port)],
+                input=message + "\nexit\n",
+                text=True,
+                capture_output=True,
+                timeout=10
+            )
+
+            data, _ = sock.recvfrom(1024)
+            received.append(data.decode())
+
+        self.assertEqual(sender.returncode, 0)
+        self.assertEqual(received, [message])
+
+    def test_invalid_sender_port(self):
+        sender = subprocess.run(
+            ["./sender", "127.0.0.1", "99999"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        self.assertNotEqual(sender.returncode, 0)
+        self.assertIn("Invalid port number", sender.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
